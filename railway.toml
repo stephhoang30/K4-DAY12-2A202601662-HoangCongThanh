@@ -10,7 +10,13 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# KHÔNG khai báo startCommand: để Railway dùng luôn CMD trong Dockerfile.
+#
+# Một nguồn sự thật duy nhất cho lệnh khởi động. CMD đã lo cả hai việc khó —
+# đọc $PORT do platform gán, và `exec` để uvicorn thành PID 1 nhận được
+# SIGTERM lúc deploy bản mới. Khai lại ở đây là ghi đè CMD và mất cả hai:
+# startCommand không chạy qua shell nên `exec` bị hiểu là tên chương trình,
+# container chết ngay không kịp ghi một dòng log nào.
 healthcheckPath = "/healthz"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
