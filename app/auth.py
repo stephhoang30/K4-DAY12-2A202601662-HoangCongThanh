@@ -29,31 +29,33 @@ def verify_bearer_token(
 ) -> str:
     """Kiểm tra header ``Authorization``; trả về client_id nếu hợp lệ.
 
-    TODO (CP3):
-      1. Thiếu header ``authorization`` → 401.
-      2. Tách header thành 2 phần: ``scheme, _, token = authorization.partition(" ")``.
-         Sai scheme (không phải ``Bearer``, so sánh không phân biệt hoa thường)
-         hoặc token rỗng → 401.
-      3. So sánh ``token`` với ``get_settings().api_token`` bằng
-         ``secrets.compare_digest(a, b)`` — **không dùng** ``==``.
-         Toán tử ``==`` dừng ngay tại ký tự đầu khác nhau, nên thời gian trả
-         lời rò rỉ thông tin về token (timing attack). ``compare_digest``
-         luôn chạy hết chuỗi.
-      4. Mọi trường hợp 401 dùng chung::
+    Token so sánh bằng ``secrets.compare_digest`` chứ không phải ``==``:
+    ``==`` dừng ngay tại ký tự đầu tiên khác nhau, nên thời gian trả lời rò rỉ
+    thông tin về token và cho phép dò từng ký tự (timing attack).
+    ``compare_digest`` luôn chạy hết chuỗi.
 
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="invalid or missing bearer token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    Mọi trường hợp hỏng đều trả về **cùng một** thông báo. Nói rõ "sai scheme"
+    hay "token không đúng" là tặng thông tin miễn phí cho người đang dò.
 
-         Header ``WWW-Authenticate`` là bắt buộc theo chuẩn HTTP cho response
-         401 — nó nói cho client biết phải xác thực kiểu gì.
-
-         Dùng **cùng một** thông báo cho mọi trường hợp: nói rõ "sai scheme"
-         hay "token không đúng" là tặng thông tin cho người đang dò.
-      5. Hợp lệ → trả về ``x_client_id`` nếu client có gửi, ngược lại trả
-         ``ANONYMOUS_CLIENT``. client_id này là đơn vị để rate limit và tính
-         chi phí.
+    client_id trả về là đơn vị để rate limit và tính chi phí.
     """
-    raise NotImplementedError("TODO (CP3): cài đặt verify_bearer_token")
+    scheme, _, token = (authorization or "").partition(" ")
+
+    hop_le = (
+        scheme.lower() == SCHEME.lower()
+        and bool(token)
+        # encode() để token có ký tự ngoài ASCII cũng không làm compare_digest
+        # ném TypeError — request hỏng phải thành 401, không phải 500.
+        and secrets.compare_digest(token.encode("utf-8"),
+                                   get_settings().api_token.encode("utf-8"))
+    )
+    if not hop_le:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="invalid or missing bearer token",
+            # Bắt buộc theo chuẩn HTTP cho 401: nói cho client biết phải xác
+            # thực kiểu gì.
+            headers={"WWW-Authenticate": SCHEME},
+        )
+
+    return x_client_id or ANONYMOUS_CLIENT
