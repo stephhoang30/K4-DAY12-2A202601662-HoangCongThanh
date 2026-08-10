@@ -34,10 +34,29 @@ services:
       timeout: 3s
       retries: 5
 
-  # TODO (CP2): khai báo service `chat` ở đây
-  # chat:
-  #   build: .
-  #   ...
+  chat:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      # Nội suy từ file .env cùng thư mục — secret không nằm trong file này,
+      # vốn được commit lên repo.
+      API_TOKEN: ${API_TOKEN}
+      # Trong compose, tên service chính là hostname. `localhost` bên trong
+      # container `chat` là chính nó, không phải Redis.
+      REDIS_URL: redis://redis:6379/0
+      PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      # Đợi Redis pass healthcheck rồi mới khởi động, không chỉ đợi nó tồn tại
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
 volumes:
   redis-data:
