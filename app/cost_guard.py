@@ -36,13 +36,10 @@ class CostGuard:
         return f"spend:{client_id}:{day or cls.today()}"
 
     def spent(self, client_id: str, day: str | None = None) -> float:
-        """Số tiền client đã tiêu trong ngày.
-
-        TODO (CP3): đọc ``self.client.get(self._key(client_id, day))``.
-        Key chưa tồn tại → Redis trả None → hàm này phải trả ``0.0``.
-        Nhớ ép kiểu ``float(...)`` vì Redis trả về chuỗi.
-        """
-        raise NotImplementedError("TODO (CP3): cài đặt spent")
+        """Số tiền client đã tiêu trong ngày."""
+        raw = self.client.get(self._key(client_id, day))
+        # Chưa tiêu gì thì Redis trả None, không phải 0
+        return float(raw) if raw is not None else 0.0
 
     def check(
         self,
@@ -52,21 +49,24 @@ class CostGuard:
     ) -> None:
         """Cho qua nếu còn ngân sách, ngược lại raise 402.
 
-        TODO (CP3): nếu ``spent(client_id) + estimated_cost > self.budget``
-        → raise ``HTTPException(status_code=402, detail="daily budget exceeded")``.
         402 = Payment Required, đúng ngữ nghĩa cho tình huống hết ngân sách.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt check")
+        if self.spent(client_id, day) + estimated_cost > self.budget:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail="daily budget exceeded",
+            )
 
     def record(self, client_id: str, cost: float, day: str | None = None) -> float:
         """Cộng dồn chi phí vừa phát sinh, trả về tổng mới.
 
-        TODO (CP3):
-          1. ``total = self.client.incrbyfloat(key, cost)``
-          2. ``self.client.expire(key, KEY_TTL_SECONDS)``
-          3. ``return float(total)``
+        ``incrbyfloat`` cộng ngay trong Redis nên hai instance ghi cùng lúc
+        không đè lên nhau — đọc-rồi-ghi từ phía Python thì có.
         """
-        raise NotImplementedError("TODO (CP3): cài đặt record")
+        key = self._key(client_id, day)
+        total = self.client.incrbyfloat(key, cost)
+        self.client.expire(key, KEY_TTL_SECONDS)
+        return float(total)
 
     def remaining(self, client_id: str, day: str | None = None) -> float:
         """CHO SẴN — còn bao nhiêu tiền trong ngân sách hôm nay."""
