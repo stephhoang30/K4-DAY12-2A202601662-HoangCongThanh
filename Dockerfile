@@ -58,4 +58,10 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 
 # Cổng đọc từ biến môi trường: Railway/Render tự gán PORT lúc chạy, hardcode
 # 8000 là container nghe nhầm cổng và bị platform coi như chết.
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+#
+# `exec` không phải chi tiết trang trí: thiếu nó thì PID 1 là `sh` còn uvicorn
+# là tiến trình con. Docker gửi SIGTERM cho PID 1, `sh` chết một mình và không
+# chuyển tín hiệu xuống con, nên uvicorn không bao giờ biết mình sắp bị tắt —
+# hết 10s grace là SIGKILL, request đang xử lý dở bị cắt ngang. `exec` cho
+# uvicorn thay thế luôn `sh`, thành PID 1 và nhận SIGTERM trực tiếp.
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
